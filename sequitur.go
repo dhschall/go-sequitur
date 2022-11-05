@@ -7,6 +7,7 @@
 package sequitur
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"unicode"
@@ -248,22 +249,40 @@ func (pr *prettyPrinter) printNonTerminal(w io.Writer, r *rules) error {
 }
 
 func (pr *prettyPrinter) printTerminal(w io.Writer, sym uint64) error {
-	out := make([]byte, 1, 1+utf8.UTFMax)
-	out[0] = ' '
-	rb := runeOrByte(sym)
-	switch r := rb.rune(); r {
-	case ' ':
-		out = append(out, '_')
-	case '\n':
-		out = append(out, []byte("\\n")...)
-	case '\t':
-		out = append(out, []byte("\\t")...)
-	case '\\', '(', ')', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		out = append(out, '\\', byte(r))
-	default:
-		out = rb.appendEscaped(out)
-	}
-	_, err := w.Write(out)
+	// out := make([]byte, 1, 9)
+	// out[0] = ' '
+	// b := make([]byte, 8)
+	// binary.LittleEndian.PutUint64(b, sym)
+
+	// rb := runeOrByte(sym)
+	// switch r := rb.rune(); r {
+	// case ' ':
+	// 	out = append(out, '_')
+	// case '\n':
+	// 	out = append(out, []byte("\\n")...)
+	// case '\t':
+	// 	out = append(out, []byte("\\t")...)
+	// case '\\', '(', ')', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+	// 	out = append(out, '\\', byte(r))
+	// default:
+	// 	out = rb.appendEscaped(out)
+	// }
+	// _, err := w.Write([]byte{' '})
+	// _, err = w.Write(b)
+	_, err := w.Write([]byte(string(' ') + fmt.Sprintf("%d", sym)))
+
+	return err
+}
+
+func printTerminal(w io.Writer, sym uint64) error {
+	// out := make([]byte, 1, 9)
+	// out[0] = ' '
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, sym)
+
+	_, err := w.Write([]byte{' '})
+	_, err = w.Write(b)
+
 	return err
 }
 
@@ -274,7 +293,7 @@ func rawPrint(w io.Writer, r *rules) error {
 				return err
 			}
 		} else {
-			if _, err := w.Write(runeOrByte(p.value).appendBytes(nil)); err != nil {
+			if err := printTerminal(w, p.value); err != nil {
 				return err
 			}
 		}
@@ -296,7 +315,7 @@ func (g *Grammar) PrettyPrint(w io.Writer) error {
 	}
 
 	for i := 0; i < len(pr.rules); i++ {
-		if _, err := fmt.Fprint(w, i, " ->"); err != nil {
+		if _, err := fmt.Fprintf(w, "%d (%dx)\t->", i, pr.rules[i].count); err != nil {
 			return err
 		}
 
@@ -332,6 +351,21 @@ func Parse(str []byte) *Grammar {
 	return g
 }
 
+// Parse parses the given bytes.
+func ParseAddr(data []uint64) *Grammar {
+	g := &Grammar{
+		ruleID: maxInt64 + 1,
+		table:  make(digrams),
+	}
+	g.base = g.newRules()
+	for i := range data {
+
+		g.base.last().insertAfter(g.newSymbolFromValue(data[i]))
+		g.base.last().prev.check()
+	}
+	return g
+}
+
 // runeOrByte holds a rune or a byte so that we can distinguish between
 // bytes that don't represent valid UTF-8 and all other runes. Values
 // not representable as UTF-8 are in the range 128-255. All other
@@ -340,6 +374,7 @@ func Parse(str []byte) *Grammar {
 type runeOrByte rune
 
 const maxRuneOrByte = uint64(utf8.MaxRune) + 256 // larger than the largest possible value of runeOrByte
+const maxInt64 = 0xffff000000000000              // larger than the largest possible value of runeOrByte
 
 func newRune(r rune) runeOrByte {
 	return runeOrByte(r + 256)

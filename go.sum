@@ -1,0 +1,4 @@
+github.com/dgryski/go-ddmin v0.0.0-20160206192532-f7df7ebd4081 h1:KQCrl3Wa7BxlTIxF3KAEB5KOoQrbYftPRDLqefL2/gc=
+github.com/dgryski/go-ddmin v0.0.0-20160206192532-f7df7ebd4081/go.mod h1:ygO5b0L3VCVCj4Z2/VtxhQ6CuDsN11+5mZTjf/EWqwM=
+github.com/dgryski/go-tinyfuzz v0.0.0-20210904222810-07940b466bb3 h1:Es/qEcriMBbxPBwP4Zn1rMjIhYFQ6rhjfVHBRbQkNmQ=
+github.com/dgryski/go-tinyfuzz v0.0.0-20210904222810-07940b466bb3/go.mod h1:eS2svzBptB3nMiDkLSnc1J7eihi6xyMVs5Ba5XBC7Fs=
