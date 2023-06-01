@@ -1,2 +1,5 @@
 workdir/*
 sequitur-fuzz.zip
+*.json
+*.csv
+*.txt

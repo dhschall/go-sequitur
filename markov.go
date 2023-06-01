@@ -144,58 +144,6 @@ func Equal[T uint64 | int](a, b []T) bool {
 // LevenshteinDistance calculate the distance between two string
 // This algorithm allow insertions, deletions and substitutions to change one string to the second
 // Compatible with non-ASCII characters
-func LevenshteinDistance[T uint64 | int](trace1, trace2 []T) (int, float32, []int) {
-
-	// Get and store length of these strings
-	trace1len := len(trace1)
-	trace2len := len(trace2)
-	// if trace1len == 0 {
-	// 	return trace2len, 0, []int{}
-	// } else if trace2len == 0 {
-	// 	return trace1len, 0, []int{}
-	// } else if Equal(trace1, trace2) {
-	// 	return 0, 1, []int{}
-	// }
-
-	column := make([]int, trace1len+1)
-
-	for y := 1; y <= trace1len; y++ {
-		column[y] = y
-	}
-	for x := 1; x <= trace2len; x++ {
-		column[0] = x
-		lastkey := x - 1
-		for y := 1; y <= trace1len; y++ {
-			oldkey := column[y]
-			var i int
-			if trace1[y-1] != trace2[x-1] {
-				i = 1
-			}
-			column[y] = Min(
-				Min(column[y]+1, // insert
-					column[y-1]+1), // delete
-				lastkey+i) // substitution
-			lastkey = oldkey
-		}
-	}
-
-	distance := column[trace1len]
-
-	max_len := Max(trace1len, trace2len)
-	distance_frac := float32(max_len-distance) / float32(max_len)
-
-	// if trace1len >= trace2len {
-	// 	distance_frac = float32(trace1len-distance) / float32(trace1len)
-	// } else {
-	// 	distance_frac = float32(trace2len-distance) / float32(trace2len)
-	// }
-
-	return distance, distance_frac, column
-}
-
-// LevenshteinDistance calculate the distance between two string
-// This algorithm allow insertions, deletions and substitutions to change one string to the second
-// Compatible with non-ASCII characters
 func MarkovChain[T uint64 | int](trace []T) map[T]map[T]int {
 
 	// type successor map[T]int
