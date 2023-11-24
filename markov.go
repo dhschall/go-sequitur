@@ -2,13 +2,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	// "encoding/json"
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -53,16 +55,19 @@ func regionAddr(addr uint64) uint64 {
 }
 
 var (
-	region_size  = flag.Uint64("region-size", 64, "config file for this experiment")
-	pf_distance  = flag.Uint("max-distance", 5, "config file for this experiment")
+	region_size = flag.Uint64("region-size", 64, "config file for this experiment")
+	order       = flag.Int("order", 1, "config file for this experiment")
+	mask        = flag.Int("mask", 0, "config file for this experiment")
+
 	address_file = flag.String("file", "data.json", "config file for this experiment")
-	results_file = flag.String("o", "edit_dist.csv", "Path where the results should be written")
+	results_file = flag.String("o", "markov_hist.csv", "Path where the results should be written")
 	log_file     = flag.String("log", "", "Logfile")
 	workload     = flag.String("wl", "AES-G", "Workload")
 	inv          = flag.Uint("inv", 17, "Invocation")
 	first_only   = flag.Bool("compare-first", false, "Compare the unique first misses")
 	with_header  = flag.Bool("header", false, "Compare the unique first misses")
 	max          = flag.Uint("m", 0, "config file for this experiment")
+	bins         = flag.Int("bins", 8, "Number of bins in the histogram")
 
 	verbose     = flag.Bool("v", false, "Print more infos: (DebugLevel)")
 	results_dir string
@@ -89,20 +94,14 @@ func main() {
 		log.SetOutput(f)
 	}
 
-	data := make(map[string]map[string][]uint64)
-	ReadJson(&data, *address_file)
+	data := ReadUintFile(*address_file)
 
-	log.Printf("Workload: %s, inv: %d, rs:%d\n", *workload, *inv, *region_size)
-	// fmt.Println("Length data", len(data))
+	log.Printf("Workload: %s, inv: %d, order:%d\n", *workload, *inv, *order)
 
-	n := *inv
-	d1 := data[*workload][fmt.Sprintf("%d", n)]
-	n_1 := n + 1
-	d2 := data[*workload][fmt.Sprintf("%d", n_1)]
-	log.Printf("Length d1 %d, d2 %d", len(d1), len(d2))
+	log.Printf("Length data %d", len(data))
 
 	// Process results
-	process(d1, d2)
+	process(data)
 
 }
 
@@ -158,10 +157,26 @@ func MarkovChain[T uint64 | int](trace []T) map[T]map[T]int {
 	// 	return 0, 1, []int{}
 	// }
 	smatrix := make(map[T]map[T]int)
+	state := trace[0]
 
 	for i := 0; i < tracelen-1; i++ {
-		v1 := trace[i]
-		v2 := trace[i+1]
+		var v1, v2 T
+		if *order > 1 && i >= *order {
+			// Remove the first element of the state
+			state ^= trace[i-*order]
+			// Add the new element to the state
+			state ^= trace[i]
+			v1 = state
+		} else {
+			v1 = trace[i]
+		}
+		v2 = trace[i+1]
+
+		if *mask != 0 {
+			v1 >>= *mask
+			v2 >>= *mask
+		}
+
 		if smatrix[v1] == nil {
 			smatrix[v1] = make(map[T]int, 0)
 		}
@@ -181,20 +196,23 @@ func nSuccessors[T uint64 | int](trace []T) {
 		successors = append(successors, float64(len(v)))
 	}
 
-	printHistogram(histogram(successors))
+	hist := histogram(successors)
+	printHistogram(hist)
+
+	writeHistogram(hist, *results_file, *with_header)
+
 }
 
-func process(d1, d2 []uint64) {
+func process(d1 []uint64) {
 
 	// n := *inv
 	// Calculate the unique, temporal-ordered Trace
 	var s uint = 0
 	if *max != 0 {
 		d1 = d1[s : s+*max]
-		d2 = d2[s : s+*max]
 	}
 
-	log.Printf("Length rec %d, repl %d ", len(d1), len(d2))
+	log.Printf("Length rec %d", len(d1))
 
 	nSuccessors[uint64](d1)
 }
@@ -225,30 +243,34 @@ func jaccard(a, b []uint64) float32 {
 	return float32(intersect) / float32(union)
 }
 
-func ReadJson(data interface{}, filename string) {
-	content, err := ioutil.ReadFile(filename)
+func ReadUintFile(filename string) (data []uint64) {
+	// Open the file
+	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("Error opening file:", err)
+	}
+	defer file.Close()
+
+	// Create a scanner to read the file line by line
+	scanner := bufio.NewScanner(file)
+
+	// Read each line
+	for scanner.Scan() {
+		line := scanner.Text()
+		num, err := strconv.ParseUint(line, 10, 64)
+		if err != nil {
+			log.Fatalln("Error parsing line:", err)
+			continue
+		}
+		data = append(data, num)
 	}
 
-	err = json.Unmarshal(content, data)
-	if err != nil {
-		log.Fatalln("error:", err)
-	}
-}
+	// Check if there was an error during scanning
+	if err := scanner.Err(); err != nil {
+		log.Fatalln("Error scanning file:", err)
 
-func WriteJson(data interface{}, outname string) {
-	_data, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		log.Fatalln(err)
 	}
-
-	// outfile = outfile + fmt.Sprintf("-n%d_t%s_b%s_%s.fp.json", n, s_filter_t, s_branch_t, s_extern_skip)
-
-	err = ioutil.WriteFile(outname, _data, 0644)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	return
 }
 
 // func WriteStrings(filename string, data []string, header string) {
@@ -335,7 +357,7 @@ func histogram(latencies []float64) []Bucket {
 
 	sort.Float64s(latencies)
 
-	bc := 16
+	bc := *bins
 
 	fastest := latencies[0]
 	// slowest := latencies[len(latencies)-1]
@@ -391,8 +413,25 @@ func printHistogram(buckets []Bucket) string {
 		if max > 0 {
 			barLen = (buckets[i].Count*40 + max/2) / max
 		}
-		res.WriteString(fmt.Sprintf("  %4.3f [%v]\t|%v\n", buckets[i].Mark, buckets[i].Count, strings.Repeat(barChar, barLen)))
+		res.WriteString(fmt.Sprintf("  %2.0f [%2.1f]\t|%v\n", buckets[i].Mark, buckets[i].Frequency*100, strings.Repeat(barChar, barLen)))
 	}
 	log.Printf("\n%s", res.String())
 	return res.String()
+}
+
+func writeHistogram(buckets []Bucket, filename string, header bool) {
+	res := new(bytes.Buffer)
+
+	if header {
+		for _, b := range buckets {
+			res.WriteString(fmt.Sprintf("%4.3f,", b.Mark))
+		}
+		res.WriteString("\n")
+	}
+
+	for _, b := range buckets {
+		res.WriteString(fmt.Sprintf("%4.3f,", b.Frequency))
+	}
+
+	ioutil.WriteFile(filename, res.Bytes(), 0644)
 }
